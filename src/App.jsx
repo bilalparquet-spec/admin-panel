@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./lib/supabase";
 
 // ═══════════════════════════════════════════════════════════════
 // DRIVERENT — لوحة التحكم الرئيسية | Admin Control Panel
@@ -238,6 +239,92 @@ export default function AdminPanel() {
   const [loginErr, setLoginErr] = useState("");
 
   const unreadCount = notifications.filter(n=>!n.read).length;
+
+  // ── Supabase: load + real-time pending registration requests ──────────────
+  useEffect(() => {
+    async function loadPendingRequests() {
+      const { data, error } = await supabase
+        .from("pending_requests")
+        .select("*")
+        .eq("status", "pending")
+        .order("request_date", { ascending: false });
+
+      if (error) { console.warn("Supabase load error:", error.message); return; }
+      if (!data || data.length === 0) return;
+
+      const newAgencies = data.map(row => ({
+        id: row.id,
+        name: row.name || row.username,
+        owner: row.name || row.username,
+        phone: row.phone,
+        wilaya: "00", email: "",
+        status: "pending", verified: false, featured: false,
+        plan: "basic", monthlyPrice: 3500, subscriptionMonths: 0,
+        subscriptionStart: null, subscriptionEnd: null,
+        cars: 0, bookings: 0, rating: 0,
+        pendingApproval: true, renewalRequest: false, suspended: false,
+        createdAt: row.request_date || new Date().toISOString(),
+        messages: [], _fromSupabase: true,
+      }));
+
+      setAgencies(prev => {
+        const staticOnes = prev.filter(a => !a._fromSupabase);
+        const existingIds = new Set(staticOnes.map(a => a.id));
+        const toAdd = newAgencies.filter(a => !existingIds.has(a.id));
+        return [...staticOnes, ...toAdd];
+      });
+    }
+
+    loadPendingRequests();
+
+    // Real-time: new registration requests
+    const regChannel = supabase
+      .channel("pending_requests_rt")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "pending_requests" },
+        (payload) => {
+          const row = payload.new;
+          const newAgency = {
+            id: row.id, name: row.name || row.username,
+            owner: row.name || row.username, phone: row.phone,
+            wilaya: "00", email: "", status: "pending",
+            verified: false, featured: false, plan: "basic",
+            monthlyPrice: 3500, subscriptionMonths: 0,
+            subscriptionStart: null, subscriptionEnd: null,
+            cars: 0, bookings: 0, rating: 0,
+            pendingApproval: true, renewalRequest: false, suspended: false,
+            createdAt: row.request_date || new Date().toISOString(),
+            messages: [], _fromSupabase: true,
+          };
+          setAgencies(prev => prev.find(a => a.id === row.id) ? prev : [newAgency, ...prev]);
+          setNotifications(prev => [{
+            id: "req_" + row.id, type: "new",
+            msg: `🔔 طلب تسجيل جديد: ${row.name || row.username} — ${row.phone}`,
+            agencyId: row.id, time: "الآن", read: false,
+          }, ...prev]);
+        }
+      )
+      .subscribe();
+
+    // Real-time: new chat messages
+    const msgChannel = supabase
+      .channel("admin_messages_rt")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const row = payload.new;
+          if (row.sender !== "user") return;
+          setNotifications(prev => [{
+            id: "msg_" + row.id, type: "message",
+            msg: `💬 رسالة جديدة من مستخدم (وكالة ${row.agency_id})`,
+            agencyId: row.agency_id, time: "الآن", read: false,
+          }, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => { regChannel.unsubscribe(); msgChannel.unsubscribe(); };
+  }, []);
 
   function canAccess(section) {
     if(!auth) return false;
