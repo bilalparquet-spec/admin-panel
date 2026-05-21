@@ -345,6 +345,7 @@ export default function AdminPanel() {
               <div style={{fontSize:10,color:S.textDim}}>{ROLES[auth.role]?.label}</div>
             </div>
           </div>
+          <button onClick={()=>window.open("https://driverent-pi.vercel.app/","_blank")} style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.3)",color:"#C084FC",borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:5}} title="العودة للتطبيق الرئيسي">🏠 التطبيق</button>
           <button onClick={()=>setAuth(null)} style={{background:"none",border:`1px solid ${S.border}`,color:S.textMuted,borderRadius:10,padding:"6px 10px",cursor:"pointer"}}><I.Logout/></button>
         </div>
       </header>
